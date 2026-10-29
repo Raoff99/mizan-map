@@ -101,7 +101,9 @@ var $ = function(id){ return document.getElementById(id); };
 
 /* ---------- Telegram ---------- */
 var tg = (window.Telegram && window.Telegram.WebApp) || null;
-var inTelegram = !!(tg && tg.initData);
+// keyboard-button Mini Apps (the only kind that may call sendData) get an EMPTY initData;
+// outside Telegram the script reports platform 'unknown'
+var inTelegram = !!(tg && (tg.initData || (tg.platform && tg.platform !== 'unknown')));
 var params = new URLSearchParams(location.search);
 var PIN_MODE = params.get('mode') === 'pin';
 
