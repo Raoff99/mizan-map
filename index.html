@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Mizan - hududni belgilash</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha256-tXCrvaljxgtN5LT/Syb5Mm9T+yzPFGH98JVcoJT7JTk=" crossorigin="anonymous">
+<style>
+:root{
+  --accent:#1f5a43;
+  --accent-ink:#ffffff;
+  --bg:var(--tg-theme-bg-color,#ffffff);
+  --fg:var(--tg-theme-text-color,#1b1f1d);
+  --hint:var(--tg-theme-hint-color,#6b7570);
+  --sec:var(--tg-theme-secondary-bg-color,#f1f3f2);
+  --line:color-mix(in srgb,var(--fg) 16%,transparent);
+  --danger:#b3261e;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;height:100dvh;background:var(--bg);color:var(--fg);
+  font:15px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;overflow:hidden}
+header{padding:8px 12px 6px;background:var(--bg);border-bottom:1px solid var(--line);flex:none}
+#hint{margin:0 0 6px;font-weight:600;font-size:14px}
+#banner{display:none;margin:0 0 6px;padding:6px 8px;border-left:3px solid var(--accent);background:var(--sec);font-size:12px;color:var(--hint)}
+.search{display:flex;gap:6px;position:relative}
+.search input{flex:1;min-width:0;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--sec);color:var(--fg);font:inherit}
+.search input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+button{font:inherit;color:var(--fg);background:var(--sec);border:1px solid var(--line);border-radius:8px;min-height:44px;padding:0 12px;cursor:pointer}
+button:active{filter:brightness(.92)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button:disabled{opacity:.45;cursor:default}
+#results{position:absolute;top:48px;left:0;right:0;z-index:1200;background:var(--bg);border:1px solid var(--line);border-radius:8px;max-height:220px;overflow:auto;display:none;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+#results button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:10px 12px;font-size:13px}
+#results .none{padding:10px 12px;color:var(--hint);font-size:13px}
+#mapwrap{position:relative;flex:1;min-height:180px}
+#map{position:absolute;inset:0;background:#cfd6d2}
+#stats{position:absolute;right:8px;top:8px;z-index:1000;background:color-mix(in srgb,var(--bg) 92%,transparent);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;pointer-events:none}
+#stats b{font-size:16px}
+#stats .bad{color:var(--danger)}
+#stats .ok{color:var(--accent)}
+.vtx{width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#fff;border:3px solid var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.vtx.first{background:var(--accent);border-color:#fff}
+.vtx.last{border-color:#e6a100}
+.pin{width:22px;height:22px;margin:-22px 0 0 -11px;background:var(--accent);border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 1px 5px rgba(0,0,0,.6)}
+.leaflet-container{font:inherit}
+.leaflet-touch .leaflet-bar a{width:40px;height:40px;line-height:40px}
+footer{flex:none;background:var(--bg);border-top:1px solid var(--line);padding:8px 12px calc(8px + env(safe-area-inset-bottom))}
+.tools{display:flex;gap:6px;margin-top:6px}
+.tools:first-child{margin-top:0}
+.tools button{flex:1;padding:0 4px;font-size:13px}
+#send{display:none;width:100%;margin-top:6px}
+#out{display:none;margin:6px 0 0}
+#out pre{margin:0;max-height:110px;overflow:auto;font:11px/1.3 ui-monospace,Consolas,monospace;background:var(--sec);padding:6px;border-radius:6px;white-space:pre-wrap;word-break:break-all}
+#out .cap{font-size:11px;color:var(--hint);margin-bottom:2px}
+.note{margin:6px 0 0;font-size:10.5px;line-height:1.3;color:var(--hint)}
+</style>
+</head>
+<body>
+<header>
+  <p id="hint"></p>
+  <p id="banner">Telegram tashqarisida &mdash; natija konsolga va panelga chiqadi.</p>
+  <form class="search" id="sform" autocomplete="off">
+    <input id="q" type="search" placeholder="Joy qidirish (masalan: Chirchiq, Mirzo Ulug'bek)" enterkeyhint="search" aria-label="Joy qidirish">
+    <button class="primary" type="submit" style="min-width:64px">Qidirish</button>
+    <div id="results" role="listbox"></div>
+  </form>
+</header>
+<div id="mapwrap">
+  <div id="map"></div>
+  <div id="stats"></div>
+</div>
+<footer>
+  <div class="tools">
+    <button id="bLoc" type="button">Joylashuvim</button>
+    <button id="bBase" type="button">Xarita</button>
+    <button id="bFile" type="button">Fayl</button>
+  </div>
+  <div class="tools">
+    <button id="bUndo" type="button">Orqaga</button>
+    <button id="bClear" type="button">Tozalash</button>
+  </div>
+  <button id="send" class="primary" type="button"></button>
+  <div id="out"><div class="cap">Yuboriladigan JSON (<span id="outSize"></span> bayt):</div><pre id="outPre"></pre></div>
+  <input id="file" type="file" accept=".kml,.geojson,.json,application/vnd.google-earth.kml+xml,application/geo+json,application/json" hidden>
+  <p class="note">Qidiruv: faqat kiritilgan matn OpenStreetMap Nominatim xizmatiga yuboriladi. Joylashuvingiz va chizilgan hudud faqat siz tasdiqlaganingizda botga yuboriladi.</p>
+</footer>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" integrity="sha256-XJrs/DDkVkUZ29zdzFOkGCJ9zHVo5hnpdi3c7HYJ7Uc=" crossorigin="anonymous"></script>
+<script>
+(function(){
+'use strict';
+
+/* ---------- constants ---------- */
+var MIN_HA = 1, MAX_HA = 100000, MAX_BYTES = 4000, MIN_VERTS = 3;
+var EARTH_R = 6378137;
+var NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+var $ = function(id){ return document.getElementById(id); };
+
+/* ---------- Telegram ---------- */
+var tg = (window.Telegram && window.Telegram.WebApp) || null;
+var inTelegram = !!(tg && tg.initData);
+var params = new URLSearchParams(location.search);
+var PIN_MODE = params.get('mode') === 'pin';
+
+if (tg) {
+  try { tg.ready(); tg.expand(); } catch(e){}
+  try { if (tg.isVersionAtLeast && tg.isVersionAtLeast('7.7')) tg.disableVerticalSwipes(); } catch(e){}
+}
+if (!inTelegram) $('banner').style.display = 'block';
+
+function alertUser(msg){
+  if (inTelegram && tg.showAlert) { try { tg.showAlert(msg); return; } catch(e){} }
+  alert(msg);
+}
+
+/* ---------- number formatting (Uzbek) ---------- */
+function fmtNum(n, d){
+  var s = Math.abs(n).toFixed(d);
+  var parts = s.split('.');
+  var int = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return (n < 0 ? '-' : '') + int + (parts[1] ? ',' + parts[1] : '');
+}
+
+/* ---------- geometry ---------- */
+function rad(x){ return x * Math.PI / 180; }
+// geodesic polygon area in m2 (spherical excess approximation, as in Leaflet.GeometryUtil)
+function geodesicAreaM2(pts){
+  var n = pts.length;
+  if (n < 3) return 0;
+  var area = 0;
+  for (var i = 0; i < n; i++) {
+    var p1 = pts[i], p2 = pts[(i + 1) % n];
+    area += rad(p2.lng - p1.lng) * (2 + Math.sin(rad(p1.lat)) + Math.sin(rad(p2.lat)));
+  }
+  return Math.abs(area * EARTH_R * EARTH_R / 2);
+}
+// segment intersection for self-intersection check (planar, lon/lat is fine locally)
+function segInt(a, b, c, d){
+  function o(p, q, r){ return (q.lng - p.lng) * (r.lat - p.lat) - (q.lat - p.lat) * (r.lng - p.lng); }
+  var o1 = o(a,b,c), o2 = o(a,b,d), o3 = o(c,d,a), o4 = o(c,d,b);
+  return (o1 * o2 < 0) && (o3 * o4 < 0);
+}
+function selfIntersects(pts){
+  var n = pts.length;
+  if (n < 4) return false;
+  for (var i = 0; i < n; i++) {
+    var a = pts[i], b = pts[(i + 1) % n];
+    for (var j = i + 1; j < n; j++) {
+      if (j === i || (j + 1) % n === i || (i + 1) % n === j) continue;
+      if (segInt(a, b, pts[j], pts[(j + 1) % n])) return true;
+    }
+  }
+  return false;
+}
+// Douglas-Peucker in metres (local equirectangular projection), ring without closing point
+function simplifyRing(pts, tolM){
+  var lat0 = pts.reduce(function(s,p){ return s + p[1]; }, 0) / pts.length;
+  var kx = Math.cos(rad(lat0)) * 111320, ky = 110540;
+  var xy = pts.map(function(p){ return [p[0] * kx, p[1] * ky]; });
+  function dist(p, a, b){
+    var dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx*dx + dy*dy;
+    if (!l2) return Math.hypot(p[0]-a[0], p[1]-a[1]);
+    var t = Math.max(0, Math.min(1, ((p[0]-a[0])*dx + (p[1]-a[1])*dy) / l2));
+    return Math.hypot(p[0]-(a[0]+t*dx), p[1]-(a[1]+t*dy));
+  }
+  function dp(i0, i1, keep){
+    var max = 0, idx = -1;
+    for (var i = i0 + 1; i < i1; i++) {
+      var d = dist(xy[i], xy[i0], xy[i1]);
+      if (d > max) { max = d; idx = i; }
+    }
+    if (idx > -1 && max > tolM) { keep[idx] = true; dp(i0, idx, keep); dp(idx, i1, keep); }
+  }
+  // split ring at the two points farthest apart (first and the farthest) for stability
+  var far = 0, fd = -1;
+  for (var i = 1; i < xy.length; i++) {
+    var d = Math.hypot(xy[i][0]-xy[0][0], xy[i][1]-xy[0][1]);
+    if (d > fd) { fd = d; far = i; }
+  }
+  var keep = {}; keep[0] = true; keep[far] = true;
+  dp(0, far, keep);
+  var back = xy.slice(far).concat([xy[0]]);
+  var idxMap = []; for (var k = far; k < xy.length; k++) idxMap.push(k); idxMap.push(0);
+  // second half: run DP on the sub-array
+  var saveXY = xy; xy = back;
+  var keep2 = {}; keep2[0] = true; keep2[back.length - 1] = true;
+  dp(0, back.length - 1, keep2);
+  xy = saveXY;
+  Object.keys(keep2).forEach(function(k2){ keep[idxMap[+k2]] = true; });
+  return pts.filter(function(_, i){ return keep[i]; });
+}
+
+/* ---------- payload ---------- */
+function r6(x){ return Math.round(x * 1e6) / 1e6; }
+function byteLen(s){ return new TextEncoder().encode(s).length; }
+function buildBoundary(latlngs, areaHa){
+  var ring = latlngs.map(function(p){ return [r6(p.lng), r6(p.lat)]; });
+  function make(r){
+    var closed = r.concat([r[0]]);
+    return JSON.stringify({
+      type: 'boundary',
+      geojson: { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [closed] } }] },
+      area_ha: Math.round(areaHa * 100) / 100
+    });
+  }
+  var s = make(ring);
+  var tol = 1;
+  while (byteLen(s) > MAX_BYTES && ring.length > MIN_VERTS) {
+    var simp = simplifyRing(ring, tol);
+    if (simp.length < MIN_VERTS) simp = ring.slice(0, MIN_VERTS);
+    if (simp.length < ring.length) { ring = simp; s = make(ring); }
+    tol *= 1.6;
+    if (tol > 1e6) break;
+  }
+  return byteLen(s) > MAX_BYTES ? null : s;
+}
+
+/* ---------- map ---------- */
+var map = L.map('map', { center: [41.3, 64.5], zoom: 6, zoomControl: true, doubleClickZoom: false, tap: true });
+var esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, maxNativeZoom: 18, attribution: 'Tiles &copy; Esri' });
+var esriLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, maxNativeZoom: 18, attribution: '' });
+var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
+var baseSat = true;
+function applyBase(){
+  if (baseSat) { map.removeLayer(osm); esri.addTo(map); esriLabels.addTo(map); $('bBase').textContent = 'Xarita: sun’iy yo‘ldosh'; }
+  else { map.removeLayer(esri); map.removeLayer(esriLabels); osm.addTo(map); $('bBase').textContent = 'Xarita: OSM'; }
+}
+applyBase();
+$('bBase').addEventListener('click', function(){ baseSat = !baseSat; applyBase(); });
+
+/* ---------- state ---------- */
+var verts = [];            // L.LatLng[]
+var markers = [];          // L.Marker[]
+var poly = L.polygon([], { color: '#ffd24a', weight: 3, fillColor: '#ffd24a', fillOpacity: .18 }).addTo(map);
+var line = L.polyline([], { color: '#ffd24a', weight: 3, dashArray: '6 6' }).addTo(map);
+var pinMarker = null;
+var lastJson = null;
+
+function vtxIcon(cls){ return L.divIcon({ className: '', html: '<div class="vtx ' + cls + '"></div>', iconSize: [0,0] }); }
+
+function setHint(){
+  $('hint').textContent = PIN_MODE
+    ? 'Yuborgan rasmingizdagi hududning taxminiy markazini xaritada bosing.'
+    : 'Hudud chegarasini xaritada burchaklarini ketma-ket bosib belgilang.';
+}
+
+function refreshStats(){
+  var el = $('stats');
+  if (PIN_MODE) {
+    el.innerHTML = pinMarker
+      ? 'Markaz: <b>' + pinMarker.getLatLng().lat.toFixed(6) + ', ' + pinMarker.getLatLng().lng.toFixed(6) + '</b>'
+      : 'Markaz belgilanmagan';
+    return;
+  }
+  var n = verts.length;
+  var ha = geodesicAreaM2(verts) / 10000;
+  var cls = '', msg = '';
+  if (n >= MIN_VERTS) {
+    if (ha < MIN_HA) { cls = 'bad'; msg = ' (kamida ' + fmtNum(MIN_HA,0) + ' ga)'; }
+    else if (ha > MAX_HA) { cls = 'bad'; msg = ' (ko‘pi bilan ' + fmtNum(MAX_HA,0) + ' ga)'; }
+    else if (selfIntersects(verts)) { cls = 'bad'; msg = ' (chegara o‘zini kesib o‘tmoqda)'; }
+    else cls = 'ok';
+  }
+  el.innerHTML = 'Maydon: <b class="' + cls + '">' + fmtNum(n >= 3 ? ha : 0, 2) + ' ga</b>' + msg +
+    '<br>Burchaklar: <b>' + n + '</b>';
+}
+
+function isValid(){
+  if (PIN_MODE) return !!pinMarker;
+  if (verts.length < MIN_VERTS) return false;
+  var ha = geodesicAreaM2(verts) / 10000;
+  return ha >= MIN_HA && ha <= MAX_HA && !selfIntersects(verts);
+}
+
+/* ---------- MainButton / fallback button ---------- */
+var btnText = PIN_MODE ? 'Markazni yuborish' : 'Hududni yuborish';
+var sendBtn = $('send');
+sendBtn.textContent = btnText;
+if (inTelegram) {
+  try { tg.MainButton.setParams({ text: btnText, color: '#1f5a43', text_color: '#ffffff' }); } catch(e){ tg.MainButton.setText(btnText); }
+  tg.MainButton.show();
+  tg.MainButton.onClick(doSend);
+} else {
+  sendBtn.style.display = 'block';
+  sendBtn.addEventListener('click', doSend);
+}
+function syncButton(){
+  var ok = isValid();
+  if (inTelegram) {
+    if (ok) { tg.MainButton.enable(); try { tg.MainButton.setParams({ color: '#1f5a43', text_color: '#ffffff' }); } catch(e){} }
+    else { tg.MainButton.disable(); }
+  } else sendBtn.disabled = !ok;
+}
+
+function render(){
+  var ll = verts.slice();
+  poly.setLatLngs(ll.length >= 3 ? ll : []);
+  line.setLatLngs(ll.length >= 2 && ll.length < 3 ? ll : []);
+  markers.forEach(function(m, i){
+    var cls = (i === 0 ? 'first' : '') + (i === markers.length - 1 ? ' last' : '');
+    m.setIcon(vtxIcon(cls));
+  });
+  refreshStats();
+  syncButton();
+}
+
+function addVertex(latlng){
+  var i = verts.length;
+  verts.push(latlng);
+  var m = L.marker(latlng, { draggable: true, icon: vtxIcon(''), keyboard: false, zIndexOffset: 500 }).addTo(map);
+  m.on('drag', function(e){ var k = markers.indexOf(m); verts[k] = e.latlng; poly.setLatLngs(verts.length >= 3 ? verts : []); line.setLatLngs(verts.length === 2 ? verts : []); refreshStats(); });
+  m.on('dragend', function(){ var k = markers.indexOf(m); verts[k] = m.getLatLng(); render(); });
+  markers.push(m);
+  render();
+}
+function clearAll(){
+  markers.forEach(function(m){ map.removeLayer(m); });
+  markers = []; verts = [];
+  if (pinMarker) { map.removeLayer(pinMarker); pinMarker = null; }
+  hideOut();
+  render();
+}
+function undo(){
+  if (PIN_MODE) { if (pinMarker) { map.removeLayer(pinMarker); pinMarker = null; render(); } return; }
+  if (!verts.length) return;
+  map.removeLayer(markers.pop()); verts.pop();
+  render();
+}
+function setPin(latlng){
+  if (!pinMarker) {
+    pinMarker = L.marker(latlng, { draggable: true, keyboard: false,
+      icon: L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [0,0] }) }).addTo(map);
+    pinMarker.on('drag', refreshStats);
+    pinMarker.on('dragend', render);
+  } else pinMarker.setLatLng(latlng);
+  render();
+}
+
+map.on('click', function(e){
+  if (PIN_MODE) setPin(e.latlng); else addVertex(e.latlng);
+});
+
+$('bUndo').addEventListener('click', undo);
+$('bClear').addEventListener('click', clearAll);
+if (PIN_MODE) { $('bFile').style.display = 'none'; $('bUndo').style.display = 'none'; }
+
+/* ---------- sending ---------- */
+function showOut(s){
+  $('out').style.display = 'block';
+  $('outPre').textContent = s;
+  $('outSize').textContent = byteLen(s);
+}
+function hideOut(){ $('out').style.display = 'none'; }
+
+function doSend(){
+  if (!isValid()) return;
+  var json;
+  if (PIN_MODE) {
+    var p = pinMarker.getLatLng();
+    json = JSON.stringify({ type: 'center', lon: r6(p.lng), lat: r6(p.lat) });
+  } else {
+    var ha = geodesicAreaM2(verts) / 10000;
+    json = buildBoundary(verts, ha);
+    if (!json) { alertUser('Hudud chegarasi juda murakkab, 4096 baytga sig‘madi. Burchaklar sonini kamaytiring.'); return; }
+  }
+  lastJson = json;
+  if (inTelegram) {
+    try { tg.sendData(json); } catch(e){ alertUser('Yuborib bo‘lmadi: ' + e.message); }
+  } else {
+    console.log('[miniapp] sendData payload (' + byteLen(json) + ' bytes):', json);
+    showOut(json);
+  }
+}
+
+/* ---------- geolocation ---------- */
+$('bLoc').addEventListener('click', function(){
+  if (!navigator.geolocation) { alertUser('Brauzer joylashuvni qo‘llab-quvvatlamaydi.'); return; }
+  var b = $('bLoc'); b.disabled = true;
+  navigator.geolocation.getCurrentPosition(function(pos){
+    b.disabled = false;
+    map.flyTo([pos.coords.latitude, pos.coords.longitude], 16);
+  }, function(err){
+    b.disabled = false;
+    alertUser('Joylashuvni aniqlab bo‘lmadi. Ruxsat berilganini tekshiring yoki joyni qidiruv orqali toping.');
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+});
+
+/* ---------- search (Nominatim, countrycodes=uz) ---------- */
+var results = $('results');
+function hideResults(){ results.style.display = 'none'; results.innerHTML = ''; }
+$('sform').addEventListener('submit', function(ev){
+  ev.preventDefault();
+  var q = $('q').value.trim();
+  if (!q) return;
+  results.style.display = 'block';
+  results.innerHTML = '<div class="none">Qidirilmoqda...</div>';
+  var url = NOMINATIM + '?format=jsonv2&limit=6&countrycodes=uz&accept-language=uz&q=' + encodeURIComponent(q);
+  fetch(url, { headers: { 'Accept': 'application/json' } })
+    .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(list){
+      results.innerHTML = '';
+      if (!list.length) { results.innerHTML = '<div class="none">Hech narsa topilmadi.</div>'; return; }
+      list.forEach(function(it){
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = it.display_name;
+        b.addEventListener('click', function(){
+          hideResults();
+          if (it.boundingbox) {
+            var bb = it.boundingbox.map(Number);
+            map.fitBounds([[bb[0], bb[2]], [bb[1], bb[3]]], { maxZoom: 17 });
+          } else map.flyTo([+it.lat, +it.lon], 15);
+        });
+        results.appendChild(b);
+      });
+    })
+    .catch(function(){ results.innerHTML = '<div class="none">Qidiruv ishlamadi. Internetni tekshiring.</div>'; });
+});
+map.on('click movestart', hideResults);
+
+/* ---------- import KML / GeoJSON ---------- */
+function ringsFromGeoJSON(g){
+  var out = [];
+  (function walk(o){
+    if (!o) return;
+    if (o.type === 'FeatureCollection') (o.features || []).forEach(walk);
+    else if (o.type === 'Feature') walk(o.geometry);
+    else if (o.type === 'GeometryCollection') (o.geometries || []).forEach(walk);
+    else if (o.type === 'Polygon') out.push(o.coordinates[0]);
+    else if (o.type === 'MultiPolygon') o.coordinates.forEach(function(pg){ out.push(pg[0]); });
+  })(g);
+  return out;
+}
+function ringsFromKML(text){
+  var doc = new DOMParser().parseFromString(text, 'text/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('KML o‘qib bo‘lmadi');
+  var out = [];
+  var polys = doc.getElementsByTagName('Polygon');
+  for (var i = 0; i < polys.length; i++) {
+    var ob = polys[i].getElementsByTagName('outerBoundaryIs')[0] || polys[i];
+    var c = ob.getElementsByTagName('coordinates')[0];
+    if (c) out.push(parseKmlCoords(c.textContent));
+  }
+  if (!out.length) { // fall back to LineStrings that look like closed rings
+    var ls = doc.getElementsByTagName('LineString');
+    for (var j = 0; j < ls.length; j++) { var cc = ls[j].getElementsByTagName('coordinates')[0]; if (cc) out.push(parseKmlCoords(cc.textContent)); }
+  }
+  return out;
+}
+function parseKmlCoords(t){
+  return t.trim().split(/\s+/).map(function(s){ var a = s.split(','); return [parseFloat(a[0]), parseFloat(a[1])]; })
+    .filter(function(p){ return isFinite(p[0]) && isFinite(p[1]); });
+}
+function loadRing(ring){
+  ring = ring.slice();
+  if (ring.length > 1) { var a = ring[0], z = ring[ring.length - 1]; if (a[0] === z[0] && a[1] === z[1]) ring.pop(); }
+  if (ring.length < 3) throw new Error('Faylda ko‘pburchak topilmadi');
+  var MAXV = 500;
+  if (ring.length > MAXV) ring = simplifyRing(ring, 5);
+  if (ring.length > MAXV) throw new Error('Burchaklar soni juda ko‘p');
+  clearAll();
+  ring.forEach(function(p){ addVertex(L.latLng(p[1], p[0])); });
+  map.fitBounds(L.latLngBounds(verts), { padding: [30, 30], maxZoom: 18 });
+}
+$('bFile').addEventListener('click', function(){ $('file').click(); });
+$('file').addEventListener('change', function(ev){
+  var f = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!f) return;
+  if (f.size > 5 * 1024 * 1024) { alertUser('Fayl juda katta (5 MB gacha).'); return; }
+  var rd = new FileReader();
+  rd.onload = function(){
+    try {
+      var text = String(rd.result), rings;
+      if (/^\s*[\[{]/.test(text)) rings = ringsFromGeoJSON(JSON.parse(text)); else rings = ringsFromKML(text);
+      if (!rings.length) throw new Error('Faylda ko‘pburchak topilmadi');
+      // choose the ring with the most vertices when several exist
+      rings.sort(function(a, b){ return b.length - a.length; });
+      loadRing(rings[0]);
+    } catch (e) { alertUser('Faylni yuklab bo‘lmadi: ' + e.message); }
+  };
+  rd.onerror = function(){ alertUser('Faylni o‘qib bo‘lmadi.'); };
+  rd.readAsText(f);
+});
+
+/* ---------- theme & init ---------- */
+if (tg) {
+  try { tg.setHeaderColor && tg.setHeaderColor('bg_color'); } catch(e){}
+  tg.onEvent && tg.onEvent('themeChanged', function(){});
+}
+setHint();
+render();
+setTimeout(function(){ map.invalidateSize(); }, 200);
+
+// test hook (harmless in production)
+window.__miniapp = { map: map, getVerts: function(){ return verts; }, simplifyRing: simplifyRing, buildBoundary: buildBoundary };
+})();
+</script>
+</body>
+</html>
